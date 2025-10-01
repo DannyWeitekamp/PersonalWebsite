@@ -1,0 +1,1629 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.10.0">Jekyll</generator><link href="https://chrismaclellan.com/feed.xml" rel="self" type="application/atom+xml" /><link href="https://chrismaclellan.com/" rel="alternate" type="text/html" /><updated>2025-07-08T16:16:46+00:00</updated><id>https://chrismaclellan.com/feed.xml</id><title type="html">Christopher J. MacLellan</title><subtitle>Personal website for Christopher J. MacLellan and blog about HCI, AI, ML, and Educational Technology.</subtitle><entry><title type="html">Machine Learning with Mixed Numeric and Nominal Data using COBWEB/3</title><link href="https://chrismaclellan.com/blog/machine-learning-with-mixed-numeric-and-nominal-data-using-cobweb3" rel="alternate" type="text/html" title="Machine Learning with Mixed Numeric and Nominal Data using COBWEB/3" /><published>2016-05-13T00:00:00+00:00</published><updated>2016-05-13T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/machine-learning-with-mixed-numeric-and-nominal-data-using-cobweb3</id><content type="html" xml:base="https://chrismaclellan.com/blog/machine-learning-with-mixed-numeric-and-nominal-data-using-cobweb3"><![CDATA[<p>Demonstration of two extensions to the cobweb/3 algorithm that
+enables it to better handle features with continuous values.</p>
+
+<h1 id="problem-overview">Problem Overview</h1>
+
+<p>Many machine learning applications require the use of both nominal (e.g.,
+color=”green”) and numeric (e.g., red=0, green=255, and blue=0) feature data,
+but most algorithms only support one or the other. This requires researchers
+and data scientists to use a variety of ad hoc approaches to convert
+troublesome features into the format supported by their algorithm of choice.
+For example, when using regression based approaches, such as linear or logistic
+regression, all features need to be converted into continuous features. In
+these cases, it is typical to encode each pair of nominal attribute values as
+its own 0/1 feature. It is also typical to use <a href="https://en.wikipedia.org/wiki/One-hot">one-hot or one-of-K
+encodings</a> for nominal features. When using algorithms that support nominal
+features, such as Naive Bayes or Decision Trees, numerical features often need
+to be converted. In these cases, the numerical features might be converted into
+discrete classes (e.g., temperature = “high”, “medium”, or “low”). When
+converting features from one type to another their meaning is implicitly
+changed. Nominal features converted into numeric are treated by the algorithm
+as if values between 0 and 1 were possible. Also, some algorithms assume that
+numeric features are normally distributed and nominal features converted into
+numeric will follow a binomial, rather than normal, distribution. Conversely,
+numeric features converted into nominal features lose some of their
+information.</p>
+
+<p>Luckily, there exist a number of algorithms that support mixed feature types
+and attempt to balance the different types of features appropriately (usually
+these are extensions of algorithms that support nominal features). For example,
+Decision Tree algorithms are often modified to automatically support median
+split features as a way of handling numeric attributes. Also, Naive Bayes has
+been modified to use a Gaussian distribution for modeling numeric features.
+Today I wanted to talk about another algorithm that supports both numeric and
+nominal features, COBWEB/3.</p>
+
+<h1 id="cobweb-family-of-algorithms">COBWEB Family of Algorithms</h1>
+
+<p>Over the past year <a href="http://erikharpstead.net">Erik Harpstead</a> and I have been developing python
+implementations of some of the machine learning algorithms in the <a href="https://en.wikipedia.org/wiki/Cobweb_(clustering)">COBWEB</a>
+family (our code is <a href="https://github.com/cmaclell/concept_formation">freely available on GitHub</a>). At their core, these
+algorithms are <a href="https://en.wikipedia.org/wiki/Online_machine_learning">incremental</a> <a href="https://en.wikipedia.org/wiki/Hierarchical_clustering">divisive hierarchical clustering algorithm</a>
+that can be used for <a href="https://en.wikipedia.org/wiki/Supervised_learning">supervised</a>, <a href="https://en.wikipedia.org/wiki/Semi-supervised_learning">semi-supervised</a>, and
+<a href="https://en.wikipedia.org/wiki/Unsupervised_learning">unsupervised</a> learning tasks. Given a sequence of training examples, COBWEB
+constructs a hierarchical organization of the examples. Here is a simple
+example of a COBWEB tree (<a href="https://en.wikipedia.org/wiki/Conceptual_clustering">image from wikipedia article on conceptual
+clustering</a>):</p>
+
+<p><img src="/images/900px-Concept_tree.png" alt="An example of a Cobweb tree with both examples and feature counts shown" /></p>
+
+<p>Each node in the hierarchy maintains a probability table of how likely each
+attribute value is given the concept/node. To construct this tree hierarchy,
+COBWEB sorts each example into its tree and at each node it considers four
+operations to incorporate the new example into its tree:</p>
+
+<p><img src="/images/cobweb_operations.png" alt="The four operations Cobweb uses to update its tree" /></p>
+
+<p>To determine which operation to perform, COBWEB simulates each operation,
+evaluates the result, and then executes the best operation. For evaluation,
+COBWEB uses <a href="https://en.wikipedia.org/wiki/Category_utility">Category Utility</a>:</p>
+
+\[CU({C_1, C_2, ..., C_n}) = \frac{1}{n} \sum_{k=1}^n P(C_k) \left[ \sum_i
+\sum_j P(A_i = V_{ij} | C_k)^2 - \sum_i \sum_j P(A_i = V_{ij})^2 \right]\]
+
+<p>This measure corresponds to increase in the number of
+attribute values that can be correctly guessed in the children nodes over the
+parent. It is similar to the <a href="https://en.wikipedia.org/wiki/Information_gain_in_decision_trees">information gain metric used by decision
+trees</a>, but optimizes for the prediction of all attributes rather than a
+single attribute.</p>
+
+<p>Once COBWEB has constructed a tree, it can be used to return clusterings of the
+examples at varying levels of aggregation. Further, COBWEB can perform
+prediction by categorizing partially specified training examples (e.g., missing
+the attributes to be predicted) into its tree and using its tree nodes to make
+predictions about the missing attributes. Thus, COBWEB’s approach to prediction
+shares many similarities with <a href="https://en.wikipedia.org/wiki/Decision_tree_learning">Decision Tree learning</a>, which also
+categorizes new data into its tree and uses its nodes to make predictions.
+However, COBWEB can be used to predict any missing attribute (or even multiple
+missing attributes), whereas each Decision Tree can be used to predict a single
+attribute.</p>
+
+<p>COBWEB’s approach is also similar to the <a href="https://en.wikipedia.org/wiki/K-nearest_neighbors_algorithm">k-nearest neighbors algorithm</a>;
+e.g., it finds the most similar previous training data and uses this to make
+predictions about new instances. However, COBWEB uses its tree structure to
+make the prediction process more efficient; i.e., it uses its tree structure to
+guide the search for nearest neighbors and compares each new instance with
+\(O(log(n))\) neighbors rather than \(O(n)\) neighbors. Earlier versions of
+COBWEB were most similar to nearest neighbor \(k=1\) because they always
+categorized to a leaf and used the leaf to make predictions, but <a href="http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.81.1509&amp;rep=rep1&amp;type=pdf">later
+variants</a> (which we implement in our code) use past performance to decide
+when it is better to use intermediate tree nodes to make predictions (higher
+nodes in the tree correspond to a larger number of neighbors being used). Thus,
+with less data, COBWEB might function similarly to nearest neighbors, but as it
+accumulates more data it dynamically adapts the number of neighbors it uses to
+make predictions based on past performance.</p>
+
+<h1 id="cobweb3">COBWEB/3</h1>
+
+<p>Now returning to our original problem, the <a href="http://axon.cs.byu.edu/~martinez/classes/678/Papers/Fisher_Cobweb.pdf">COBWEB</a> algorithm only operates
+with nominal attributes; e.g., a color attribute might be either “green” or
+“blue”, rather than a continuous value. The original algorithm was extended by
+<a href="http://ntrs.nasa.gov/archive/nasa/casi.ntrs.nasa.gov/19920016495.pdf">COBWEB/3</a>, which modeled the probability of each numeric attribute value
+using a Gaussian distribution (similar to how Naive Bayes handles numeric
+data). With this change, i.e., \(P(A_i = V_{ij} | C_k)^2\) is replaced with
+\(\frac{1}{2 * \sqrt{pi} * \sigma_{ik}}\) and \(P(A_i = V_{ij})^2\) is
+replaced with \(\frac{1}{2 * \sqrt{pi} * \sigma_{i}}\) for continuous
+attributes. I find COBWEB’s approach to handling mixed numeric and nominal
+attributes interesting because it treats each as what they are (numeric or
+nominal), but combines them in a principled way using category utility. This
+approach is not without problems though. I’m going to talk about two problems
+with the COBWEB/3 approach and how I have overcome them in <a href="https://github.com/cmaclell/concept_formation">my COBWEB/3
+implementation</a>.</p>
+
+<h2 id="problem-1-small-values-of-sigma">Problem 1: Small values of (sigma)</h2>
+
+<p>This approach runs into problems when the \(\sigma\) values get close to 0.
+In these situations \(\frac{1}{\sigma} \rightarrow \infty\). To handle these
+situations, COBWEB/3 bound \(\sigma\) by \(\sigma_{acuity}\), a user
+defined value that specifies the smallest allowed value for (sigma). This
+ensures that \(\frac{1}{\sigma}\) never becomes undefined. However, this does
+not take into account situations when \(P(A_i) \lt 1.0\). Additionally, for
+small values of \(\sigma_{acuity}\), this lets COBWEB achieve more than 1
+expected correct guess per attribute, which is impossible for nominal
+attributes (and does not really make sense for continuous either). This causes
+problems when both nominal and continuous values are being used together; i.e.,
+continuous attributes will get higher preference because COBWEB tries to
+maximize the number of expected correct guesses.</p>
+
+<p>To account for this my implementation of COBWEB/3 uses the modified equation:
+\(P(A_i = V_{ij})^2 = P(A_i)^2 * \frac{1}{2 * \sqrt{pi} * \sigma}\). The key change
+here is that we multiply by \(P(A_i)^2\) for situations when attributes might be
+missing. Further, instead of bounding \(\sigma\) by acuity, we add some
+independent, normally distributed noise to \(\sigma\): i.e., 
+\(\sigma = \sqrt{\sigma^2 + \sigma_{acuity}^2}\), where 
+\(\sigma_{acuity} = \frac{1}{2 * \sqrt{pi}}\). This ensures the expected
+correct guesses never exceeds 1. From a theoretical point of view, it basically
+is a assumption that there is some independent, normally distributed
+measurement error that is <a href="https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables">added to the estimated error of the attribute</a>.
+It is possible that there is additional measurement error, but the value is
+chosen so as to yield a sensical upper bound on the expected correct guesses.</p>
+
+<p>To get a sense for how adding noise to \(\sigma\) impacts its value I plotted
+the original and noisy values of \(\sigma\) given different values of
+\(\sigma\), so we can see how they differ:</p>
+
+<p><img src="/images/std_comparisons.png" alt="Plot of either sigma or corrected sigma given different values of sigma" /></p>
+
+<p>The plot basically shows that for \(\sigma \lt 1\) there is less than 1%
+difference between the original and noisy \(\sigma\), but for small values
+the difference increases as the original value approaches 0.</p>
+
+<p>To get a sense of how this impacts the expected correct guesses, I plotted the
+expected number of correct guesses for the numeric attribute 
+\((P(A_i = V_{ij})^2)\) for the three possible approaches: unbounded \(\sigma\),
+acuity bounded \(\sigma\), and noisy \(\sigma\):</p>
+
+<p><img src="/images/numeric_attribute_formulations.png" alt="Plot of expected correct guesses by standard deviation for each sigma
+variant" /></p>
+
+<p>This graph shows that the unbounded version exceeds 1 correct guess as we get
+close to 0. This is bad when we have mixed numeric and nominal features because
+numeric features will worth more than the nominal features. Next, we see that
+the acuity bounded version levels off at 1 correct guess. This is also a
+problem because it makes it impossible for COBWEB to distinguish which values
+produce the best category utility for small values of \(\sigma\). The noisy
+version produces the most reasonable results: it provides the ability to
+discriminate between different values of \(\sigma\) for the entire range (even
+small values), it never exceeds 1 correct guess, and for medium and larger
+values of \(\sigma\) it produces the same behavior as the other approaches.</p>
+
+<h2 id="problem-2-sensitive-to-scale-of-variables">Problem 2: Sensitive to Scale of Variables</h2>
+
+<p>Additionally, COBWEB/3 is sensitive to the scale of numeric feature values. If
+feature values are large (e.g., 0-1000 vs 0-1), then the standard deviation of
+the values will be larger and it will have a lower number of expected correct
+guesses. To overcome this limitation, <a href="https://github.com/cmaclell/concept_formation">my implementation</a> of COBWEB/3
+performs online normalization of the numeric features using the estimated
+standard deviation of all values, which is maintained at the root of the
+categorization tree. My implementation normalizes all numeric values to have
+standard deviation equal to one half, which is maximum standard deviation that
+can be achieved in a nominal value. This ensures that numeric and nominal
+values are treated equally.</p>
+
+<h1 id="evaluation-of-cobweb3-implementation">Evaluation of COBWEB/3 Implementation</h1>
+
+<p>In order to test whether my implementation of COBWEB/3 is functioning correctly
+and overcoming the stated limitations, I replicated the COBWEB/3 experiments
+conducted by <a href="http://dx.doi.org/10.1109/TKDE.2002.1019208">Li and Biswas (2002)</a>. In their study, they created an
+artificial dataset with two numeric and two nominal features. Here is the
+approach Li and Biswas (2002) used to generate their 180 artificial datapoints:</p>
+
+<blockquote>
+  <p>The nominal feature values were predefined and assigned to each class in
+equal proportion. Nominal feature 1 has a unique symbolic value for each
+class and nominal feature 2 had two distinct symbolic values assigned to each
+class. The numeric feature values were generated by sampling normal
+distributions with different means and standard deviations for each class,
+where the means for the three classes are three standard-deviations apart
+from each other. For the first class, the two numeric features are
+distributed as (N(mu=4, sigma=1)) and (N(mu=20, sigma=2)); for the second
+class, the distributions were (N(mu=10, sigma=1)) and (N(mu=32, sigma=2));
+and for the third class, (N(mu=16, sigma=1))and (N(mu=44, sigma=2)).</p>
+</blockquote>
+
+<p>Given these three clusters Li and Biswas added non-Gaussian noise to either the
+numeric or nominal features. To add noise, some percentage of either the
+numeric or nominal features were randomly selected and given the values
+specified by the other clusters. To compute a clustering Li and Biswas trained
+COBWEB/3 using all of the examples then assigned cluster labels based on which
+child of the root the examples was assigned to. Next, Li and Biswas computed a
+misclassification score for each assignment. The misclassification count was
+computed using the following three rules:</p>
+
+<ol>
+  <li>If an object falls into a fragmented group, where its type is a majority, it
+is assigned a value of 1,</li>
+  <li>If the object is a minority in any group, it is assigned a misclassification
+value of 2, and</li>
+  <li>Otherwise the misclassification value for an object is 0.</li>
+</ol>
+
+<p>For this calculation if more than three groups are formed by COBWEB/3, the
+additional smaller groups are labeled as fragmented groups.</p>
+
+<p>Here is the graph of COBWEB/3’s misclassification count (taken Li and Biswas’s
+paper) for increasing amounts of noise to either the numeric or nominal
+features:</p>
+
+<p><img src="/images/li_and_biswas_2002_missclassification.png" alt="Original graph of misclassifaction by noise from Li and Biswas, 2002" /></p>
+
+<p>We can see from this graph that COBWEB/3 does not treat noise in the numeric
+and nominal features equally. Noise in the nominal values seems to have more of
+an impact on misclassification than noise in the numeric values. To ensure <a href="https://github.com/cmaclell/concept_formation">my
+implementation</a> of COBWEB/3 is functioning normally after adding the new new
+approach for handling small values of \(\sigma\), I shut off normalization at
+the root and attempted to replicate Li and Biswas’s results. Here is a graph
+showing the performance of my implementation:</p>
+
+<p><img src="/images/original_misclassification.png" alt="Replication of Li and Biswas's (2002) misclassifacation by noise graph" /></p>
+
+<p>At a rough glance, it seems like both implementations are performing the same.
+Looking a little closer, my implementation has less misclassifications overall
+(max of ~140 vs. ~200). So it looks like the new treatment of \(\sigma\) is
+working and maybe is even improving performance. However, it seems like my
+implementation is still giving preference to nominal features; i.e., noise in
+nominal features has a bigger impact on misclassification count. When reading
+the Li and Biswas paper, my initial thoughts were that the dispersal of the
+numeric values (e.g., std of the clusters are either 1 or 2) might cause
+COBWEB/3 to give less preference to numeric features because larger standard
+deviations of values correspond to a lower number of expected correct guesses
+(see the figure titled Comparison of COBWEB/3 Numeric Correct Guess
+Formulations). To test if this was the case, I activated online normalization
+of numeric attributes in my COBWEB/3 implementation and replicated the
+experiment. Here is the results of this experiment:</p>
+
+<p><img src="/images/normalized_misclassification.png" alt="Misclassification by noise plot for Cobweb with normalization active" /></p>
+
+<p>This result shows that COBWEB/3 with online normalization treats numeric and
+nominal attributes more equally. The original Li and Biswas paper compared
+COBWEB/3 to two other systems (<a href="http://dx.doi.org/10.1007/978-94-009-0107-0_13">AUTOCLASS</a> and ECOBWEB) and to a new
+algorithm that they propose (<a href="http://dx.doi.org/10.1109/TKDE.2002.1019208">SBAC</a>). Their proposed algorithm was the only
+one that had better performance than COBWEB/3. When I looked at the
+implementation details, a key feature of their system is that is is less
+sensitive to the scale of attributes because it uses median splits. This last
+graph shows that my COBWEB/3 implementation performs as well (maybe better)
+than their proposed SBAC algorithm.</p>
+
+<h1 id="conclusions">Conclusions</h1>
+
+<p>The <a href="http://ntrs.nasa.gov/archive/nasa/casi.ntrs.nasa.gov/19920016495.pdf">COBWEB/3 algorithm</a> provides a natural approach for doing machine
+learning with mixed numeric and nominal data. However, it has two problems: it
+struggles when the standard deviation of numeric attributes is close to zero
+and it is sensitive to the scale of the numeric attributes. <a href="http://erikharpstead.net/">Erik
+Harpstead</a> and I created an implementation of COBWEB/3 (<a href="https://github.com/cmaclell/concept_formation">available on
+GitHub</a>) that overcomes both of these issues. To handle the first issue we
+assume some measurement noise for numeric attributes that results in expected
+correct guess values that make sense (i.e., no more than one correct guess can
+be achieved per numeric attribute) and that provide the ability to discriminate
+between values of \(\sigma\) across the entire range \((0,\infty)\). To handle the
+second issue we added a feature for performing online normalization of numeric
+features. Next, I tested the modified version of COBWEB/3 by replicating an
+artificial noise experiment by <a href="http://dx.doi.org/10.1109/TKDE.2002.1019208">Li and Biswas (2002)</a>. I showed that showed
+that modified COBWEB/3 is less sensitive to noise than the the original version
+of COBWEB/3 and treats numeric and nominal attributes more equally. These
+results show that my implementation of COBWEB/3 is an effective approach for
+clustering with mixed numeric and nominal data.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[Demonstration of two extensions to the cobweb/3 algorithm that enables it to better handle features with continuous values.]]></summary></entry><entry><title type="html">Modeling Student Learning in Python</title><link href="https://chrismaclellan.com/blog/modeling-student-learning-in-python" rel="alternate" type="text/html" title="Modeling Student Learning in Python" /><published>2016-04-22T00:00:00+00:00</published><updated>2016-04-22T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/modeling-student-learning-in-python</id><content type="html" xml:base="https://chrismaclellan.com/blog/modeling-student-learning-in-python"><![CDATA[<p>An exploration of how to model human learing in a geometry tutor using the
+additive factors model (AFM) as well the extended model that accounts for
+slipping (AFM+S).</p>
+
+<h1 id="problem-overview">Problem Overview</h1>
+
+<p>Statistical models of student learning, such as the Additive Factors Model
+<a href="http://www.cs.cmu.edu/afs/cs/user/hcen/www/thesis_0.93.pdf">Cen, 2009</a>), have
+been getting a lot of attention recently at educational technology conferences,
+such as <a href="http://www.educationaldatamining.org/">Educational Data Mining</a>. These
+models are used to estimate students’ knowledge of particular cognitive skills
+(e.g., how to compute the sum two numbers) given their problem-solving process
+data. The learned estimates can then be used to predict subsequent student
+performance and to inform adaptive problem selection. In particular,
+educational technologies, such as <a href="https://en.wikipedia.org/wiki/Intelligent_tutoring_system">intelligent tutoring
+systems</a>, can use
+these estimates to assign each student practice problems that target their
+specific weaknesses, so that they do not waste time practicing skills they
+already know. There is some evidence that the time savings with this approach
+is substantial (<a href="http://www.educationaldatamining.org/EDM2013/papers/rn_paper_80.pdf">Yudelson and Koedinger, 2013</a>); for example, studies have
+shown that students can double their learning in the same time (<a href="http://www.educationaldatamining.org/EDM2013/papers/rn_paper_80.pdf">Pane et al.,
+2013</a>) or
+learn more in approximately half the time (<a href="http://doi.org/10.5334/2008-14">Lovett et al.,
+2008</a>) when using an adaptive intelligent
+tutoring system.</p>
+
+<p>Additionally, statistical models of learning can be used to identify the
+component skills that students are learning in a particular digital learning
+environment. A key element of these models is that researchers must label the
+steps of each problem with the skills that they believe are needed to correctly
+perform them. Researchers can then develop alternative skill models (also
+called knowledge component models, using the convention from <a href="http://dx.doi.org/10.1111/j.1551-6709.2012.01245.x">Koedinger et al., (2012)</a> and see which models result in an
+increased ability to predict the student behavior. The division between skills
+might not seem important, but is in fact crucial for adaptive problem selection
+in that it makes the adaptive selection more precise. When skills are too
+coarse, students spend time practicing sub-skills they don’t need to.
+Conversely, when they are too fine, students have to do additional work to
+prove that they know each skill when, in fact, multiple skills are actually
+just the same skill.</p>
+
+<p>Given the usefulness of these models and their practical applications, a lot of
+work has been done to make it easier for researchers to develop new models
+(both statistical and skill). One resource that I constantly rely on for my
+research is <a href="https://pslcdatashop.web.cmu.edu/">DataShop</a>, an online public
+repository for student learning data that (at the time of this writing)
+contains more than 193 million student transactions across 821 datasets.
+Further, the DataShop platform also implements the Additive Factors Model, a
+popular statistical model of student learning, so it is easy to start
+investigating learning in the available datasets.</p>
+
+<p>While DataShop is capable of running the Additive Factors Model server side,
+there is no easy way to run the model on your local machine. This is an issue
+when I want to run different kinds of evaluation on the models that are not
+available directly in DataShop (e.g., different kinds of cross validation). It
+is also a problem when you have large datasets because DataShop will not run
+the Additive Factors Model if the dataset is too big. To overcome this issue
+some researchers have used R formulas that approximate the model (e.g., see
+<a href="https://pslcdatashop.web.cmu.edu/help?page=rSoftware">DataShop’s
+documentation</a>). However,
+these approximations don’t don’t take into account some of the key features of
+the Additive Factors Model, such as strictly positive learning rates.
+Additionally, it isn’t possible to use other variants of of the Additive
+Factors Model, such as my variant that adds slipping parameters (<a href="http://christopia.net/media/publications/maclellan2-2015.pdf">MacLellan et
+al., 2015</a>);
+i.e., it models situations where students get steps wrong even when they
+correctly know the skills, which is a key feature in other statistical learning
+models such as <a href="https://en.wikipedia.org/wiki/Bayesian_Knowledge_Tracing">Bayesian Knowledge
+Tracing</a>.</p>
+
+<p>To address this issues I implemented both the standard Additive Factors Model
+(AFM) and my Additive Factors Model + Slip (AFM+Slip) in Python. Further, I
+wrote the code so that it accepts data files that are in <a href="https://pslcdatashop.web.cmu.edu/help?page=importFormatTd">DataShop
+format</a> (thanks to
+<a href="http://erikharpstead.net/">Erik Harpstead</a>, we should be able to support both
+transaction-level and student-step-level exports). The code, which I am
+tentatively calling pyAFM, is available on <a href="https://github.com/cmaclell/pyAFM">my GitHub
+repository</a>. In this blog post, I briefly
+review these two models that I implement (AFM and AFM+Slip) and provide an
+example of how they can be applied to one of the public datasets on DataShop.</p>
+
+<h1 id="background">Background</h1>
+
+<p>The Additive Factors Model, and other students models such as Bayesian
+Knowledge Tracing (<a href="http://dx.doi.org/10.1007/BF01099821">Corbett &amp; Anderson,
+1994</a>), extend traditional <a href="https://en.wikipedia.org/wiki/Item_response_theory">Item-Response
+Theory models</a> to model
+student learning (IRT only models item difficulty and student skill). A key
+component of these modeling approaches is something called a Q-Matrix (<a href="http://www.aaai.org/Papers/Workshops/2005/WS-05-02/WS05-02-006.pdf">Barnes,
+2005</a>),
+which is mapping of student steps to the skills, or knowledge components,
+needed to solve them . An initial mapping is typically based on problem types.
+For example, all problems in the multiplication unit might be labeled with the
+multiplication skill. Another common initial mapping is to assign each unique
+step to its own skill (this is basically what most IRT models do). However,
+good mappings can be difficult to find and often require researchers to
+iteratively test mappings to see which better fits the student data. Approaches
+that utilize Q matrices and that model learning typically fit the data
+substantially better than simple regression models based on problem type alone,
+such as the technique discussed in <a href="http://david-hu.com/2011/11/02/how-khan-academy-is-using-machine-learning-to-assess-student-mastery.html">this Khan Academy blog
+post</a>,
+because they take the effects of different component skills and learning into
+account.</p>
+
+<h1 id="additive-factors-model">Additive Factors Model</h1>
+
+<p>Many student learning models have been proposed that utilize Q matrices and
+that model learning, but I’ve chosen to focus on the Additive Factors Model,
+which is one of the more popular models. The Additive Factors Model is a type
+of logistic regression model. As such, it assumes that the probability that a
+student will get step i correct (\(p_i\)) follows a logistic function:</p>
+
+<p>\[p_i = \frac{1}{1 + e^{-z_i}}\]</p>
+
+<p>In the case of Additive Factors Model,</p>
+
+<p>\[z_i = \alpha_{student(i)} + \sum_{k \in KCs(i)} (\beta_k + \gamma_k \times
+opp(k, i))\]</p>
+
+<p>where \(\alpha_{student(i)}\) corresponds to the prior knowledge of the
+student who performed step i, \(KCs(i)\) specifies the set of knowledge
+components used on step i (from the Q-matrix), \(\beta_k\) specifies the
+difficulty of the knowledge component k, \(\gamma_k\) specifies the rate at
+which the knowledge component k is learned, and \(opp(k, i)\) is the number of
+practice opportunities the student has had on knowledge component k before step
+i. Here is an annotated visual representation of the learning curve predicted
+by the Additive Factors Model:</p>
+
+<p><img src="/images/afm_curve.png" alt="Graph of Additive Factors Model learning curve" /></p>
+
+<p>The Additive Factors Model, as specified by Cen and DataShop, also has two
+additional features. First, the learning rates are restricted to be positive,
+under the assumption that practice can only improve the likelihood that a
+student will get a step correct. Second, to prevent overfitting an <a href="https://en.wikipedia.org/wiki/Tikhonov_regularization">L2
+regularization</a> is
+applied to student intercepts. These two features are left out in most
+implementations of the Additive Factors Model because they cannot be easily be
+implemented in most logistic regression packages.</p>
+
+<p>To implement the Additive Factors Model, I implemented my own Logistic
+Regression Classifier (on my GitHub
+<a href="https://github.com/cmaclell/pyAFM/blob/master/custom_logistic.py">here</a>). For
+convenience, I implemented my classifier as a
+<a href="http://scikit-learn.org/stable/">Scikit-learn</a> classifier (so I can more
+easily use their cross validation functions). I couldn’t just use
+Scikit-learn’s logistic regression class because it didn’t provide me with the
+ability to use box constraints (i.e., to specify that learning rates most
+always be greater than or equal to 0). Their implementation also does not allow
+me to specify different regularization settings for individual parameters
+(i.e., to only regularize the student intercepts). My custom logistic
+regression classifier implements this functionality.</p>
+
+<h1 id="additive-factors-model--slip">Additive Factors Model + Slip</h1>
+
+<p>This model extends the previous model to include slipping parameters for each
+knowledge component. These parameters are used to account for situations where
+a students incorrectly apply a skill even though they know it. To add these
+parameters to the model I had to extend logistic regression to include bounds
+on one side of the logistic function (an approach I call Bounded Logistic
+Regression in <a href="http://christopia.net/media/publications/maclellan2-2015.pdf">my
+paper</a>). Now, the
+probability that a student will get a step i correct (\(p_i\)) is modeled as
+two logistic functions multiplied together:</p>
+
+<p>\[p_i = \frac{1}{1 + e^{-s_i}} \times \frac{1}{1 + e^{-z_i}}\]</p>
+
+<p>Identical to the previous model,</p>
+
+<p>\[z_i = \alpha_{student(i)} + \sum_{k \in KCs(i)} (\beta_k + \gamma_k \times
+opp(k, i))\]</p>
+
+<p>Additionally, the slipping behavior is modeled as, \[s_i = \tau + \sum_{k
+\in KCs(i)} \delta_k \] where \(\tau\) corresponds to the average slip rate of
+all knowledge components and \(\delta_k\) corresponds to the difference in
+slipping rate for the knowledge component k from the average. The logistic
+function is used to model the slipping behavior because in some situations
+steps are labeled with multiple knowledge components and the logistic function
+has been shown to approximate both conjunctive and disjunctive behavior when
+combining parameters (<a href="http://christopia.net/media/publications/maclellan2-2015.pdf">Cen,
+2009</a>). Here is
+what the predicted learning curve looks like after incorporating the new
+skipping parameters:</p>
+
+<p><img src="/images/afm_with_slip_curve.png" alt="Graph of Additive Factors Model Plus Slip learning curve" /></p>
+
+<p>Similar to the previous model, this model also constrains the learning rates to
+be positive and regularizes the student intercepts. Additionally, it
+regularizes the individual student slip parameters (the (\delta)’s) to
+prevent overfitting.</p>
+
+<p>In order to construct this model I implemented a Bounded Logistic Regression
+classifier (<a href="https://github.com/cmaclell/pyAFM/blob/master/bounded_logistic.py">code is on my GitHub</a>). This classifier is different from
+the traditional Logistic Regression in that it accepts two separate sets of
+features (one set for each logistic function).</p>
+
+<h1 id="comparison-on-the-geometry-dataset">Comparison on the Geometry Dataset</h1>
+
+<p>In <a href="http://christopia.net/media/publications/maclellan2-2015.pdf">my paper</a> I
+tested this technique on five different datasets across four domains (Geometry,
+Equation Solving, Writing, and Number Line Estimation). For this blog post, I
+wanted to step through the process of running both models on the Geometry
+dataset and to highlight one situation where the two models differ in their
+behavior.</p>
+
+<p>First, I went to DataShop and exported the Student Step file for the <a href="https://pslcdatashop.web.cmu.edu/LearningCurve?datasetId=76">Geometry
+96-97 dataset</a>.
+Next, I ran my
+<a href="https://github.com/cmaclell/pyAFM/blob/master/process_datashop.py">process_datashop.py</a>
+script twice on the exported student step file (once for AFM and once for
+AFM+S). I selected the knowledge component model that I wanted to analyze (I
+chose the model LFASearchAICWholeModel3, which is one of the best fitting) and
+my code returned the following cross validation results (I only included the
+first three KC and Student parameter estimates for brevity):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ python3 process_datashop.py -m AFM ds76_student_step_All_Data_74_2014_0615_045213.txt
+ Unstratified CV    Stratified CV    Student CV    Item CV
+-----------------  ---------------  ------------  ---------
+            0.397            0.400         0.410      0.402
+KC Name                                                             Intercept (logit)    Intercept (prob)    Slope
+----------------------------------------------------------------  -------------------  ------------------  -------
+Geometry*Subtract*Textbook_New_Decompose-compose-by-addition                    2.563               0.928    0.000
+Geometry*circle-area                                                           -0.236               0.441    0.171
+Geometry*decomp-trap*trapezoid-area                                            -0.536               0.369    0.091
+...
+Anon Student Id                         Intercept (logit)    Intercept (prob)
+------------------------------------  -------------------  ------------------
+Stu_bc7afcb7eef3ccfc1fc6547ed5fcde34               -0.316               0.422
+Stu_c43d4a17398b2667daacdc70c76cf8ef               -0.055               0.486
+Stu_4902934aaa88223a58cd80f44d0011e1               -0.017               0.496
+...
+</code></pre></div></div>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ python3 process_datashop.py -m AFM+S ds76_student_step_All_Data_74_2014_0615_045213.txt
+Unstratified CV    Stratified CV    Student CV    Item CV
+-----------------  ---------------  ------------  ---------
+            0.396            0.397         0.409      0.399
+KC Name                                                             Intercept (logit)    Intercept (prob)    Slope    Slip
+----------------------------------------------------------------  -------------------  ------------------  -------  ------
+Geometry*Subtract*Textbook_New_Decompose-compose-by-addition                   17.573               1.000    0.745  -0.592
+Geometry*circle-area                                                           -1.098               0.250    0.194   0.172
+Geometry*decomp-trap*trapezoid-area                                            -1.386               0.200    0.106  -0.288
+...
+Anon Student Id                         Intercept (logit)    Intercept (prob)
+------------------------------------  -------------------  ------------------
+Stu_bc7afcb7eef3ccfc1fc6547ed5fcde34               -0.307               0.424
+Stu_c43d4a17398b2667daacdc70c76cf8ef               -0.007               0.498
+Stu_4902934aaa88223a58cd80f44d0011e1                0.174               0.543
+...
+</code></pre></div></div>
+
+<p>These results show that for the this dataset the AFM+S model performs better on
+cross validation than the AFM model (for all types of cross validation). It is
+also interesting to note that the difficulties of the skills  are different
+after taking the slipping into account. The student prior knowledge estimates
+are also different. This makes sense because the initial difficulty and prior
+knowledge estimates are being adjusted to account for the slipping rates. It is
+also important to note that the learning rate estimates are much higher in the
+AFM+S model. To get a better sense for why, I plotted the learning curves from
+the student data with the associated predicted learning curves from the two
+models. To do this I used my
+<a href="https://github.com/cmaclell/pyAFM/blob/master/plot_datashop.py">plot_datashop.py</a>
+script (when prompted I selected the LFASearchAICWholeModel3 KC model) :</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ python3 plot_datashop.py ds76_student_step_All_Data_74_2014_0615_045213.txt
+</code></pre></div></div>
+
+<p>This returns an overall learning curve plot for all of the knowledge components
+together and a plot of the learning curve for each individual knowledge
+component. Here is the overall learning curve:</p>
+
+<p><img src="/images/figure_19.png" alt="&quot;A plot of the student learning curve and the predicted learning curves from AFM and AFM+S" /></p>
+
+<p>It is a little hard to to see differences between the two models, but one thing
+to point out is that the AFM+S model better fits the steeper learning rate at
+the beginning. This would agree with my finding that the learning rates in the
+AFM+S model tend to be higher than the AFM model. This effect is much more
+pronounced if we choose knowledge component where the error rate does not
+converge to zero. For example, lets look at the
+Geometry*compose-by-multiplication skill:</p>
+
+<p><img src="/images/figure_5.png" alt="&quot;A plot of the student learning curve and the predicted learning curves from AFM and AFM+S on the geometry, compose-by-multiplication skill" /></p>
+
+<p>We can see from this graph that the traditional additive factors model is
+trying to converge to zero error, so higher error rates in the tail cause it to
+have a shallower learning rate at the beginning. In contrast, the model with
+the slipping parameters better models the initial steepness of the learning
+curve, as well as the higher error rate in the tail.</p>
+
+<h1 id="summary">Summary</h1>
+
+<p>I implemented the Additive Factors Model and Additive Factors Model + Slip in
+Python and showed how it can be used to model student learning in a publicly
+available dataset from DataShop. My hope is that by making AFM and AFM+S
+available and easy to run in Python, more people will consider using it (<a href="http://david-hu.com/2011/11/02/how-khan-academy-is-using-machine-learning-to-assess-student-mastery.html">Hey
+you over at Khan
+Academy!</a>).
+Also, as a researcher, I know how much of a pain it is to have to implement
+someone else’s student modeling technique, just to compare your technique to
+it. Now other researchers can easily compare their student learning model to
+the Additive Factors Model (with all of its nuances, such as positive learning
+rates and regularized student intercepts) as well as to my Additive Factors
+Model with Slipping parameters. I’d welcome people showing that their technique
+is better than mine, just remember to cite me :).</p>]]></content><author><name></name></author><summary type="html"><![CDATA[An exploration of how to model human learing in a geometry tutor using the additive factors model (AFM) as well the extended model that accounts for slipping (AFM+S).]]></summary></entry><entry><title type="html">Lazy Shuffled List Generator</title><link href="https://chrismaclellan.com/blog/lazy-shuffled-list-generator" rel="alternate" type="text/html" title="Lazy Shuffled List Generator" /><published>2016-04-05T00:00:00+00:00</published><updated>2016-04-05T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/lazy-shuffled-list-generator</id><content type="html" xml:base="https://chrismaclellan.com/blog/lazy-shuffled-list-generator"><![CDATA[<p>An attempt to find a generalized approach for shuffling a very large list that
+does not fit in memory. I explore the creation of generators that sample items
+without repeats using random number generators.</p>
+
+<h1 id="problem-overview">Problem Overview</h1>
+
+<p>For one of my projects, I need to generate a random permutation (without
+repetition) of the integers from 0 to n. In my particular situation, I am
+generating permutations for large n and I am only using a small portion of the
+values at the beginning of sampled permutation (e.g., generating a permutation
+of a shorter length k, where k is small but n is large). My initial approach
+was to build an array of values from 0 to n and then shuffling it using the
+<a href="https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle">Fisher-Yates
+algorithm</a>.
+However, for large values of n, I am unable to hold all of the elements in
+memory (in Java, I get a heap overflow), so I started looking for more memory
+efficient approaches that let me  generate the elements of a random permutation
+as needed. In essence, I am looking for an algorithm to do a lazy list shuffle.</p>
+
+<p>I did some googling and found <a href="http://stackoverflow.com/a/16167976">this
+approach</a>, which consists of constructing
+a finite field given a prime modulus m; e.g., \(aX\) mod \(m\) for \(a = 1,2,3,
+\cdots, n\). We know that the field contains the numbers \(1 \cdots m-1\) when
+m is prime (I think it was Gauss that showed this in his book <a href="https://en.wikipedia.org/wiki/Disquisitiones_Arithmeticae">Disquisitiones
+Arithmeticae</a>). This
+ensures that we generate all of the values in the desired range at some point.
+However, sometimes it generates additional values (when m is larger than the
+size of the range). In these cases, we can simply ignore values outside the
+range and keep generating values until they are in the desired range. This
+approach, which comes from the work on <a href="https://en.wikipedia.org/wiki/Format-preserving_encryption">format-preserving
+encryption</a>&lt;/a&gt;, is
+actually pretty efficient if m is not that much larger than the size of the
+range because only a small portion of values are invalid. Thus, this approach
+works by selecting the smallest prime \(m\) larger than the size of the range
+we want to generate, selecting a random generator \(a\), and selecting an
+initial seed \(X_0\). Then we can generate successive values using the relation
+\(X_n = X_{n-1} + a\) mod \(m\). While this approach can be used to lazily
+generate the elements of a random permutation with constant memory, some of my
+early testing showed that the permutations generated are not actually that
+random.</p>
+
+<p>To overcome this limitation, I started looking for alternative approaches that
+generate more “random” looking permutations. It turns out the first approach I
+found is a special case of a <a href="https://en.wikipedia.org/wiki/Linear_congruential_generator">linear congruential
+generator</a>, a
+well-known pseudorandom number generator, that only has an additive component
+(no multiplicative component). Researching this type of number generator more,
+I found that a <a href="https://en.wikipedia.org/wiki/Lehmer_random_number_generator">Lehmer, or multiplicative congruential,
+generator</a> is
+another special case of a linear congruential generator that can be used to
+generate more random looking permutations. This type of generator lets me have
+precise control over the number of elements in the finite field, which I can
+use to ensure we generate full permutations. Additionally, I found another
+pseudorandom number generator, a <a href="https://en.wikipedia.org/wiki/Linear_feedback_shift_register">linear feedback shift
+register</a>, that
+can be used to generate more random looking sequences, while still having
+precise control over the number of elements in the finite field. These two
+approaches, which are both based on Finite Field theory, require the selection
+of a modulus and a generator that determines the size of the finite field and
+the order in which these elements are generated. To ensure that the finite
+fields in both approaches have maximal order (i.e., that all of the values in
+the range appear in the generated permutation) we must ensure that the
+generators in both approaches are primitive roots of the finite fields. For the
+multiplicative congruential generator, this consists of selecting the smallest
+prime \(m\) larger than the size of the range and a value \(a\) that is a
+primitive root modulo \(m\). For the linear feedback shift register, this
+consists of selecting a modulo two polynomial that is a primitive root  for the
+number of bits being used in the linear feedback shift register.</p>
+
+<p>To test all three approaches, I implemented them  in python (I refer to the
+functions as lazyshuffledrange1,  lazyshuffledrange2, and lazyshuffledrange3)
+and compare them to each other and to the naive Fisher-Yates approach (which I
+call shuffledrange). Here are my python implementations of each function.</p>
+
+<h1 id="approaches">Approaches</h1>
+
+<h2 id="1-fisher-yates-shuffledrange">1. Fisher-Yates (shuffledrange)</h2>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="kn">from</span> <span class="nn">random</span> <span class="kn">import</span> <span class="n">shuffle</span>
+<span class="k">def</span> <span class="nf">shuffledrange</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+    <span class="s">"""
+    This generates the full range and shuffles it using random.shuffle,
+    which implements the Fisher-Yates shuffle: 
+        &lt;a href="https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle" target="_blank"&gt;https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle&lt;/a&gt;
+    From the python docs: 
+        Note that for even rather small len(x), the total number of
+        permutations of x is larger than the period of most random number
+        generators; this implies that most permutations of a long sequence can
+        never be generated.
+    This function has the same args as the builtin ``range'' function, but
+    returns the values in shuffled order:
+        range(stop)
+        range(start, stop[, step])
+    &amp;gt;&amp;gt;&amp;gt; sorted([i for i in shuffledrange(10)])
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    """</span>
+    <span class="k">if</span> <span class="n">stop</span> <span class="o">==</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">stop</span> <span class="o">=</span> <span class="n">start</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="p">,</span> <span class="n">step</span><span class="p">)]</span>
+    <span class="n">shuffle</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">p</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">br</span><span class="o">&gt;</span></code></pre></figure>
+
+<h2 id="2-additive-congruential-generator-lazyshuffledrange1">2. Additive Congruential Generator (lazyshuffledrange1)<br /></h2>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="kn">from</span> <span class="nn">random</span> <span class="kn">import</span> <span class="n">randint</span>
+<span class="k">def</span> <span class="nf">lazyshuffledrange1</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+    <span class="s">"""
+    This approach can be used to lazily generate the full range and shuffles it 
+    using a modular finite field. The approach was take from here:
+        &lt;a href="http://stackoverflow.com/a/16167976" target="_blank"&gt;http://stackoverflow.com/a/16167976&lt;/a&gt;
+    This function has the same args as the builtin ``range'' function, but
+    returns the values in shuffled order:
+        range(stop)
+        range(start, stop[, step])
+    &gt;&gt;&gt; sorted([i for i in lazyshuffledrange1(10)])
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    &gt;&gt;&gt; sorted([i for i in lazyshuffledrange1(2, 20, 3)])
+    [2, 5, 8, 11, 14, 17]
+    """</span>
+    <span class="k">if</span> <span class="n">stop</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">stop</span> <span class="o">=</span> <span class="n">start</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="p">(</span><span class="n">stop</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span> <span class="o">//</span> <span class="n">step</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">nextPrime</span><span class="p">(</span><span class="n">l</span><span class="p">)</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="n">randint</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="n">m</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">seed</span> <span class="o">=</span> <span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">l</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">seed</span>
+    <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="o">&lt;</span> <span class="n">l</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">step</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="n">start</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="n">a</span><span class="p">)</span> <span class="o">%</span> <span class="n">m</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="o">==</span> <span class="n">seed</span><span class="p">:</span>
+            <span class="k">break</span>
+
+<span class="k">def</span> <span class="nf">nextPrime</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">n</span><span class="o">+</span><span class="mi">1</span>
+    <span class="k">if</span> <span class="n">p</span> <span class="o">&lt;=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">2</span>
+    <span class="k">if</span> <span class="n">p</span><span class="o">%</span><span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">p</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">while</span> <span class="ow">not</span> <span class="n">isPrime</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+        <span class="n">p</span> <span class="o">+=</span> <span class="mi">2</span>
+    <span class="k">return</span> <span class="n">p</span>
+    
+<span class="k">def</span> <span class="nf">isPrime</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">False</span>
+    <span class="k">elif</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">True</span>
+    <span class="k">elif</span> <span class="n">n</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">n</span> <span class="o">%</span> <span class="mi">3</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">False</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="mi">5</span>
+    <span class="k">while</span> <span class="n">i</span><span class="o">*</span><span class="n">i</span> <span class="o">&lt;=</span> <span class="n">n</span><span class="p">:</span> 
+        <span class="k">if</span> <span class="n">n</span> <span class="o">%</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">n</span> <span class="o">%</span> <span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+        <span class="n">i</span> <span class="o">+=</span> <span class="mi">6</span>
+    <span class="k">return</span> <span class="bp">True</span></code></pre></figure>
+
+<h2 id="3-multiplicative-congruential-generator-lazyshuffledrange2">3. Multiplicative Congruential Generator (lazyshuffledrange2)</h2>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="kn">from</span> <span class="nn">random</span> <span class="kn">import</span> <span class="n">randint</span>
+<span class="kn">import</span> <span class="nn">math</span>
+<span class="k">def</span> <span class="nf">lazyshuffledrange2</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+    <span class="s">"""
+    This generates the full range and shuffles it using a Lehmer random number
+    generator, which is also called a multiplicative congruential generator and
+    is a special case of a linear congruential generator:
+        &lt;a href="https://en.wikipedia.org/wiki/Lehmer_random_number_generator" target="_blank"&gt;https://en.wikipedia.org/wiki/Lehmer_random_number_generator&lt;/a&gt;
+        &lt;a href="https://en.wikipedia.org/wiki/Linear_congruential_generator" target="_blank"&gt;https://en.wikipedia.org/wiki/Linear_congruential_generator&lt;/a&gt;
+    Basically, we are iterating through the elements in a finite field. There
+    are a few complications. First, we select a prime modulus that is slightly
+    larger than the size of the range. Then, if we get elements outside the
+    range we ignore them and continue iterating. Finally, we need the generator
+    to be a primitive root of the selected modulus, so that we generate a full
+    cycle. The seed provides most of the randomness of the permutation,
+    although we also randomly select a primitive root.
+    This function has the same args as the builtin ``range'' function, but
+    returns the values in shuffled order:
+        range(stop)
+        range(start, stop[, step])
+    &amp;gt;&amp;gt;&amp;gt; sorted([i for i in lazyshuffledrange2(10)])
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    &amp;gt;&amp;gt;&amp;gt; sorted([i for i in lazyshuffledrange2(2, 20, 3)])
+    [2, 5, 8, 11, 14, 17]
+    """</span>
+    <span class="k">if</span> <span class="n">stop</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">stop</span> <span class="o">=</span> <span class="n">start</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="p">(</span><span class="n">stop</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span> <span class="o">//</span> <span class="n">step</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">nextPrime</span><span class="p">(</span><span class="n">l</span><span class="p">)</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="n">randint</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="n">m</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">while</span> <span class="ow">not</span> <span class="n">isPrimitiveRoot</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">m</span><span class="p">):</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">randint</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="n">m</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">seed</span> <span class="o">=</span> <span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">l</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">seed</span>
+    <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="o">=</span> <span class="n">l</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">step</span> <span class="o">*</span> <span class="p">(</span><span class="n">x</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">start</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">a</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span> <span class="o">%</span> <span class="n">m</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="o">==</span> <span class="n">seed</span><span class="p">:</span>
+            <span class="k">break</span>
+
+<span class="k">def</span> <span class="nf">isPrimitiveRoot</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="c1"># assuming n is prime then eulers totient = n-1
+</span>    <span class="n">phi</span> <span class="o">=</span> <span class="n">n</span><span class="o">-</span><span class="mi">1</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">factorize</span><span class="p">(</span><span class="n">phi</span><span class="p">):</span>
+        <span class="k">if</span><span class="p">(</span><span class="nb">pow</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">phi</span><span class="o">//</span><span class="n">p</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">False</span>
+    <span class="k">return</span> <span class="bp">True</span>
+
+<span class="k">def</span> <span class="nf">factorize</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="s">"""
+    A naive approach to finding the prime factors of a number n.
+    &amp;gt;&amp;gt;&amp;gt; [i for i in factorize(10)]
+    [2, 5]
+    &amp;gt;&amp;gt;&amp;gt; [i for i in factorize(7*11*13)]
+    [7, 11, 13]
+    &amp;gt;&amp;gt;&amp;gt; [i for i in factorize(101 * 211)]
+    [101, 211]
+    &amp;gt;&amp;gt;&amp;gt; [i for i in factorize(11*13)]
+    [11, 13]
+    """</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="o">=</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="nb">StopIteration</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="mi">2</span>
+    <span class="n">step</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">last</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">i</span><span class="o">*</span><span class="n">i</span> <span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="o">=</span> <span class="n">n</span><span class="p">:</span>
+        <span class="k">while</span> <span class="n">n</span> <span class="o">&amp;</span><span class="n">gt</span><span class="p">;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">while</span> <span class="n">n</span> <span class="o">%</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">i</span> <span class="o">&amp;</span><span class="n">gt</span><span class="p">;</span> <span class="n">last</span><span class="p">:</span>
+                    <span class="k">yield</span> <span class="n">i</span>
+                    <span class="n">last</span> <span class="o">=</span> <span class="n">i</span>
+                <span class="n">n</span> <span class="o">//=</span> <span class="n">i</span>
+            <span class="n">i</span> <span class="o">+=</span> <span class="n">step</span>
+            <span class="n">step</span> <span class="o">=</span> <span class="mi">2</span></code></pre></figure>
+
+<h2 id="4-linear-feedback-shift-register-lazyshuffledrange3">4. Linear Feedback Shift Register (lazyshuffledrange3)</h2>
+
+<figure class="highlight"><pre><code class="language-python" data-lang="python"><span class="kn">from</span> <span class="nn">random</span> <span class="kn">import</span> <span class="n">randint</span>
+<span class="c1"># Primitive polynomial roots up to 48 bits, taken from: 
+# &lt;a href="http://www.xilinx.com/support/documentation/application_notes/xapp052.pdf" target="_blank"&gt;http://www.xilinx.com/support/documentation/application_notes/xapp052.pdf&lt;/a&gt;
+</span><span class="n">lfsr_roots</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">6</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">7</span><span class="p">,</span> <span class="mi">6</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">8</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">4</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">9</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">7</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">11</span><span class="p">,</span> <span class="mi">9</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">13</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">14</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">15</span><span class="p">,</span> <span class="mi">14</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">15</span><span class="p">,</span> <span class="mi">13</span><span class="p">,</span> <span class="mi">4</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">17</span><span class="p">,</span> <span class="mi">14</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">18</span><span class="p">,</span> <span class="mi">11</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">19</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">20</span><span class="p">,</span> <span class="mi">17</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">21</span><span class="p">,</span> <span class="mi">19</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">22</span><span class="p">,</span> <span class="mi">21</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">23</span><span class="p">,</span> <span class="mi">18</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">24</span><span class="p">,</span> <span class="mi">23</span><span class="p">,</span> <span class="mi">22</span><span class="p">,</span> <span class="mi">17</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">25</span><span class="p">,</span> <span class="mi">22</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">26</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">27</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">28</span><span class="p">,</span> <span class="mi">25</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">29</span><span class="p">,</span> <span class="mi">27</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">30</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">31</span><span class="p">,</span> <span class="mi">28</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">22</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">33</span><span class="p">,</span> <span class="mi">20</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">34</span><span class="p">,</span> <span class="mi">27</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">35</span><span class="p">,</span> <span class="mi">33</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">36</span><span class="p">,</span> <span class="mi">25</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">37</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">38</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">39</span><span class="p">,</span> <span class="mi">35</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">40</span><span class="p">,</span> <span class="mi">38</span><span class="p">,</span> <span class="mi">21</span><span class="p">,</span> <span class="mi">19</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">41</span><span class="p">,</span> <span class="mi">38</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">42</span><span class="p">,</span> <span class="mi">41</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">19</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">43</span><span class="p">,</span> <span class="mi">42</span><span class="p">,</span> <span class="mi">38</span><span class="p">,</span> <span class="mi">37</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">44</span><span class="p">,</span> <span class="mi">43</span><span class="p">,</span> <span class="mi">18</span><span class="p">,</span> <span class="mi">17</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">45</span><span class="p">,</span> <span class="mi">44</span><span class="p">,</span> <span class="mi">42</span><span class="p">,</span> <span class="mi">41</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">46</span><span class="p">,</span> <span class="mi">45</span><span class="p">,</span> <span class="mi">26</span><span class="p">,</span> <span class="mi">25</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">47</span><span class="p">,</span> <span class="mi">42</span><span class="p">],</span>
+    <span class="p">[</span><span class="mi">48</span><span class="p">,</span> <span class="mi">47</span><span class="p">,</span> <span class="mi">21</span><span class="p">,</span> <span class="mi">20</span><span class="p">],</span>
+<span class="p">]</span>
+<span class="k">def</span> <span class="nf">lazyshuffledrange3</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+    <span class="s">"""
+    This generates the full range and shuffles it using a Fibonacci linear
+    feedback shift register:
+        https://en.wikipedia.org/wiki/Linear_feedback_shift_register#Fibonacci_LFSRs
+    Here I use a table of precomputed primitive roots of different polynomials
+    mod 2. In many ways this is similar to the multiplicative congruential
+    generator in that we are iterating through elements of a finite field. We
+    need primitive roots so that we can be sure we generate all elements in the
+    range.  If we get elements outside the range we ignore them and continue
+    iterating. Finally, we need the generator to be a primitive root of the
+    selected modulus, so that we generate a full cycle. The seed provides the
+    randomness for the permutation. 
+    This function has the same args as the builtin ``range'' function, but
+    returns the values in shuffled order:
+        range(stop)
+        range(start, stop[, step])
+    &amp;gt;&amp;gt;&amp;gt; sorted([i for i in lazyshuffledrange3(10)])
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    &amp;gt;&amp;gt;&amp;gt; sorted([i for i in lazyshuffledrange3(2, 20, 3)])
+    [2, 5, 8, 11, 14, 17]
+    """</span>
+    <span class="k">if</span> <span class="n">stop</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="n">stop</span> <span class="o">=</span> <span class="n">start</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">l</span> <span class="o">=</span> <span class="p">(</span><span class="n">stop</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span> <span class="o">//</span> <span class="n">step</span>
+    <span class="n">root_idx</span> <span class="o">=</span> <span class="n">l</span><span class="p">.</span><span class="n">bit_length</span><span class="p">()</span><span class="o">-</span><span class="mi">2</span>
+    <span class="n">nbits</span> <span class="o">=</span> <span class="n">lfsr_roots</span><span class="p">[</span><span class="n">root_idx</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">roots</span> <span class="o">=</span> <span class="n">lfsr_roots</span><span class="p">[</span><span class="n">root_idx</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">nbits</span> <span class="o">=</span> <span class="n">l</span><span class="p">.</span><span class="n">bit_length</span><span class="p">()</span>
+    <span class="n">roots</span> <span class="o">=</span> <span class="n">lfsr_roots</span><span class="p">[</span><span class="n">nbits</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
+    <span class="n">seed</span> <span class="o">=</span> <span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">l</span><span class="p">)</span>
+    <span class="n">lfsr</span> <span class="o">=</span> <span class="n">seed</span>
+    <span class="k">while</span> <span class="p">(</span><span class="bp">True</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">lfsr</span> <span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="o">=</span> <span class="n">l</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">step</span> <span class="o">*</span> <span class="p">(</span><span class="n">lfsr</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">start</span>
+        <span class="n">bit</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">roots</span><span class="p">:</span>
+            <span class="n">bit</span> <span class="o">=</span> <span class="p">(</span><span class="n">bit</span> <span class="o">^</span> <span class="p">(</span><span class="n">lfsr</span> <span class="o">&amp;</span><span class="n">gt</span><span class="p">;</span><span class="o">&amp;</span><span class="n">gt</span><span class="p">;</span> <span class="p">(</span><span class="n">nbits</span> <span class="o">-</span> <span class="n">r</span><span class="p">)))</span>
+        <span class="n">bit</span> <span class="o">=</span> <span class="p">(</span><span class="n">bit</span> <span class="o">&amp;</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">lfsr</span> <span class="o">=</span>  <span class="p">(</span><span class="n">lfsr</span> <span class="o">&amp;</span><span class="n">gt</span><span class="p">;</span><span class="o">&amp;</span><span class="n">gt</span><span class="p">;</span> <span class="mi">1</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">bit</span> <span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span><span class="o">&amp;</span><span class="n">lt</span><span class="p">;</span> <span class="p">(</span><span class="n">nbits</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">lfsr</span> <span class="o">==</span> <span class="n">seed</span><span class="p">):</span>
+            <span class="k">break</span></code></pre></figure>
+
+<h2 id="evaluation">Evaluation</h2>
+<p>Before conducting any evaluation, a simple analysis of the algorithms shows
+that the three new functions use constant memory because we don’t retain any of
+the elements of the permutations and simply use the last value in the
+permutation sequence to generate the next. This is substantially better than
+the shuffledrange function that generates the entire range in memory and
+shuffles it with the Fisher-Yates algorithm. Next, I wanted to get a sense of
+how random each approach is, so I plotted the output of each function for
+generating a permutation of the values from \(0 \cdots 100\). Here are the
+four plots:</p>
+
+<p><img src="/images/shuffledrange.png" alt="Shufflerange values by position in list" /></p>
+
+<p><img src="/images/lazyshuffledrange1.png" alt="Lazyshufflerange1 values by position in list" /></p>
+
+<p><img src="/images/lazyshuffledrange2.png" alt="Lazyshufflerange2 values by position in list" /></p>
+
+<p><img src="/images/lazyshuffledrange3.png" alt="Lazyshufflerange2 values by position in list" /></p>
+
+<p>These plots show that the most random outputs seem to be the shuffledrange
+(Fisher-Yates is known to generate each possible permutation with equal
+likelihood) and lazyshuffledrange2 (the multiplicative congruential generator).
+The lazyshuffledrange3 function (the linear feedback shift register) also seems
+to be random, but it seems to have some values grouped together. Finally, the
+lazyshuffledrange1 (the additive congruential generator) is clearly not random
+(this is the result I was mentioning earlier that led me to try the two
+additional approaches).</p>
+
+<p>Next, I tested how fast each of these approaches is. To do this, I used
+python’s “timeit” function to test how quickly each function could generate a
+permutation of the values \(0 \cdots 1000\). As an additional check of the
+randomness, I measured the <a href="https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient">spearman
+correlation</a>
+of the generated values with their position in the list. For both the timing
+and correlation tests, I ran each approach 3 times and picked the fastest of
+the three runs, as well as the lowest correlation, to get a sense of best case
+for each approach. Here are the results:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Shuffle Function</th>
+      <th>Time (sec)</th>
+      <th>Spearman r</th>
+      <th>pval</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>shuffledrange</td>
+      <td>10.779</td>
+      <td>-0.085</td>
+      <td>0.007</td>
+    </tr>
+    <tr>
+      <td>lazyshuffledrange1</td>
+      <td>3.833</td>
+      <td>-0.032</td>
+      <td>0.305</td>
+    </tr>
+    <tr>
+      <td>lazyshuffledrange2</td>
+      <td>5.527</td>
+      <td>-0.043</td>
+      <td>0.170</td>
+    </tr>
+    <tr>
+      <td>lazyshuffledrange3</td>
+      <td>10.834</td>
+      <td>-0.015</td>
+      <td>0.636</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Next, to get a sense of how these approaches scale, I timed each function for
+ranges of increasing size. Here is a timing data plotted for each algorithm for
+ranges of size 10, 100, 1000, and 10000:</p>
+
+<p><img src="/images/times_OkW2n7Y.png" alt="Times needed to generate randomly shuffled ranges for increasing values of n" /></p>
+
+<p>These results show that the lazyshuffledrange1 (the additive congruential
+generator) and lazyshuffledrange2 (the multiplicative congruential generator)
+functions are the fastest and seem to scale well with increase in the size of
+the range. In contrast, lazyshuffledrange3 (the linear feedback shift register)
+is slower than the shuffledrange (the Fisher-Yates) function. This is likely
+because my implementation of lazyshuffledrange3 uses precomputed primitive
+roots for mods that are powers of 2. So the number of values outside the range
+that are still in the finite field tend to be large, so the function takes more
+iterations to generate valid values.</p>
+
+<p>As a final test, I wanted to see if repeated calls to each algorithm were
+uniformly sampling from the space of possible permutations. To evaluate this, I
+chose a small range (\(0 \cdots 6\)) and called each function 1000 times given
+this range. Here I plotted the histograms over the resulting permutations:</p>
+
+<p><img src="/images/shuffledrange_hist.png" alt="ShuffledRange: histogram of probability of each generated permutation" /></p>
+
+<p><img src="/images/lazyshuffledrange1_hist.png" alt="LazyShuffledRange1: histogram of probability of each generated permutation" /></p>
+
+<p><img src="/images/lazyshuffledrange2_hist.png" alt="LazyShuffledRange2: histogram of probability of each generated permutation" /></p>
+
+<p><img src="/images/lazyshuffledrange3_hist.png" alt="LazyShuffledRange3: histogram of probability of each generated permutation" /></p>
+
+<p>These results show that the shuffledrange (Fisher-Yates) seems to approach a
+uniform probability of each permutation (although the pydocs make note that for
+large n, not all permutations may be possible). Our more memory efficient
+approaches seem to have a pretty uniform probability of each permutation that
+they generate, but they are all limited in the number of permutations they can
+generate. The lazyshuffledrange1 (the additive congruential generator) seems to
+generate the most permutations, and  lazyshuffledrange3 (the linear feedback
+shift register) generates the smallest number of permutations.
+Lazyshuffledrange2 (the multiplicative congruential generator) is somewhere in
+the middle. If one is interested in generating the full space of possible
+permutations, then this is a troublesome result. On the other hand, the results
+do make some sense. The number of permutations generated corresponds roughly to
+the number of possible states for the generators. For example,
+lazyshuffledrange1 accepts a generator \(a\) between 1 and the modulus and a
+seed between 1 and the size of the range. If our range is length 6, then the
+modulus is 7 (the smallest prime larger than 6) and \(a \in [2, 6]\) and \(seed
+\in [0,5]\), so there are 30 possible initial conditions, which agrees with the
+number of permutations we see in the histogram. By contrast, the
+lazyshuffledrange2 function also uses the modulus 7 (the smallest prime larger
+than the size of the range), but \(a \in \{3, 5\}\) (there are only 2 primitive
+roots mod 7, see <a href="https://en.wikipedia.org/wiki/Primitive_root_modulo_n#Table_of_primitive_roots">this
+table</a>)
+and \(seed \in [1,5]\) (a multiplicative congruential generator cannot start
+off at 0), so there are only 10 possible initial conditions, which agrees with
+the histogram results. Finally, the linear feedback shift register has fixed
+primitive roots (because I used a prebuilt table), so its only parameter is
+\(seed \in [0,5]\), or 6 initial conditions, which also agrees with the
+histogram results. In order to support more possible permutations we could
+increase the prime modulus of these generators until the number of possible
+permutations is large enough. However, this will take more computing power
+(because more of the values in the finite field are outside the range and more
+iterations will need to be performed to get values within the range).</p>
+
+<p>As a basic test of this idea, I increased the modulus of the lazyshuffledrange2
+function to be the smallest prime larger than 2 times the size of the range,
+which resulted in the following histogram:</p>
+
+<p><img src="/images/lazyshuffledrange2_hist_2m.png" alt="LazyShuffledRange2 with increased modulos that is prime at least 2 times larger than the size of the range: histogram of probability of each generated permutation" /></p>
+
+<p>As we can see, this doubling of the number of possible states in the generator
+yields approximately a doubling in the number of permutations it can generate.</p>
+
+<h1 id="summary">Summary</h1>
+
+<p>I implemented four algorithms, one is the naive Fisher-Yates shuffle
+(shuffledrange) and the other three are more memory efficient approaches to
+lazily generating the values of a random shuffle (i.e., permutation without
+repetition) of a list. These approaches are the additive congruential generator
+(lazyshuffledrange1), multiplicative congruential generator
+(lazyshuffledrange2), and the linear feedback shift register
+(lazyshuffledrange3). All three approaches are based on finite field theory. I
+found that the fastest approach that also (by my very naive eye-ball test and
+basic correlation analysis) seems to generate suitably pseudorandom shufflings
+was the multiplicative congruential generator. It also seems to have uniform
+probability over the possible permutations it can generate. However, the number
+of possible permutations it can produce is limited by the number of possible
+states that can be represented in the multiplicative congruential generator,
+which is determined by the modulus of the finite field. If more possible
+permutations are needed, then the modulus can be increased. This results in
+more possible permutations that can be generated at an additional computation
+cost. In situations where only a few permutations are needed, then it is
+probably a sufficient memory efficient approach to lazily generating the
+elements of a shuffled list.</p>
+
+<p>If any readers have thoughts on how I can increase the possible permutations
+that can be generated by any of my proposed approaches, I would love to hear
+about it!</p>]]></content><author><name></name></author><summary type="html"><![CDATA[An attempt to find a generalized approach for shuffling a very large list that does not fit in memory. I explore the creation of generators that sample items without repeats using random number generators.]]></summary></entry><entry><title type="html">Bitcoins a Beginners Howto</title><link href="https://chrismaclellan.com/blog/bitcoins-a-beginners-howto" rel="alternate" type="text/html" title="Bitcoins a Beginners Howto" /><published>2016-03-27T00:00:00+00:00</published><updated>2016-03-27T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/bitcoins-a-beginners-howto</id><content type="html" xml:base="https://chrismaclellan.com/blog/bitcoins-a-beginners-howto"><![CDATA[<p>I have been hearing about bit coins a lot lately
+(<a href="http://www.techdirt.com/articles/20110605/22322814558/senator-schumer-says-bitcoin-is-money-laundering.shtml">here</a>
+and
+<a href="http://news.slashdot.org/story/11/05/19/0149234/Mint-It-Yourself-With-a-Browser-Based-Bitcoin-Miner">here</a>)
+and so I decided to check them out and give a basic overview of how to get a
+bit coin system running on Ubuntu. It was much more confusing then I thought it
+would be but I eventually got it working. Of course I immediately saw a number
+of interesting possibilities, which I will discuss at the end.</p>
+
+<p>First, the easiest way to get started is to download the pre-compiled binary
+files for linux (available
+<a href="https://sourceforge.net/projects/bitcoin/files/Bitcoin/bitcoin-0.3.21/bitcoin-0.3.21-linux.tar.gz/download">here</a>).
+The gui for linux isn’t working at this time because ubuntu doesn’t have
+wxwidgets2.9 yet but the command line works great.  Once you have the binary
+files downloaded extract them:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>tar -zxvf bitcoin-0.3.22.tar.gz
+</code></pre></div></div>
+
+<p>Then make a bitcoin directory and bitcoin.conf file:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mkdir ~/.bitcoin
+echo "rpcuser=un" &gt; ~/.bitcoin/bitcoin.conf
+echo "rpcpassword=pw" &gt;&gt; ~/.bitcoin/bitcoin.conf
+echo "gen=0" &gt;&gt; ~/.bitcoin/bitcoin.conf
+echo "rpcallowip=127.0.0.1" &gt;&gt; ~/.bitcoin/bitcoin.conf
+echo "paytxfee=0.00" &gt;&gt; ~/.bitcoin/bitcoin.conf
+</code></pre></div></div>
+
+<p>With the directory created and the configuration file made go ahead and start
+the bitcoin server:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>~/src/bitcoin-0.3.22/bin/64/bitcoind -daemon
+bitcoin server starting
+</code></pre></div></div>
+
+<p>Once the server starts it will take quite a while to download the chain of
+blocks from the other bitcoin peers (for info on what this means check out
+<a href="https://en.bitcoin.it/wiki/Main_Page">this</a>). It took my computer about 2-3
+hours.</p>
+
+<p>Once the server has finished loading the blocks you can download a client and
+have it request work from the server and start computing.</p>
+
+<p>To check the status of your server you can run the following commands (list of
+commands <a href="https://en.bitcoin.it/wiki/Original_Bitcoin_client/API_Calls_list">here</a>):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>./bitcoind getinfo
+</code></pre></div></div>
+
+<p>This gives you information about how many blocks you’ve downloaded etc… I
+checked <a href="http://blockexplorer.com/">bitcoin block exploror</a> to see how many
+blocks there were (129,000+ when I did this). I used this a lot because
+bitcoind never seemed to give me any output so I never knew what it was doing.</p>
+
+<p>As far as the actual bitcoin calculation there are a couple of ways to do it:</p>
+
+<p>I used <a href="https://github.com/rand/pyminer">pyminer</a> because it is simple, the
+code is human readable, and it works with little to no hassle.</p>
+
+<p>You could also have bitcoind compute directly by editing
+~/.bitcoin/bitcoin.conf and replacing:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gen=0
+</code></pre></div></div>
+
+<p>with</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gen=1
+</code></pre></div></div>
+
+<p>Then when you run bitcoind-daemon it will also be computing bitcoins.</p>
+
+<p>The added benefit of doing things this way is you could edit the bitcoin.conf
+file to allow other ip addresses. Then you could have all of your clients
+connect to the single server to request and process work (essentially creating
+a local pool) with all of your bitcoins being stored in one place (this may or
+may not be a bad thing). You could also use this server to feed bitcoins up
+other ways since the bitcoind server handles json-rpc requests. I was even
+thinking it would be quite easy to make a javascript file that you could
+include in your website that could connect to your bitcoind server. Then you
+could harvest cpu power from your web traffic, an interesting idea that others
+have experimented with (<a href="http://www.bitcoinplus.com/generate">http://www.bitcoinplus.com/generate</a>). I found a general
+lack of the absolute basics on how to get the bitcoind running on linux/ubuntu
+(mac and windows have gui’s) and I hope this clears up some of those basics.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[I have been hearing about bit coins a lot lately (here and here) and so I decided to check them out and give a basic overview of how to get a bit coin system running on Ubuntu. It was much more confusing then I thought it would be but I eventually got it working. Of course I immediately saw a number of interesting possibilities, which I will discuss at the end.]]></summary></entry><entry><title type="html">Installing and Running Opinion Finder for Sentiment Analysis</title><link href="https://chrismaclellan.com/blog/installing-and-running-opinion-finder-for-sentiment-analysis" rel="alternate" type="text/html" title="Installing and Running Opinion Finder for Sentiment Analysis" /><published>2016-03-27T00:00:00+00:00</published><updated>2016-03-27T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/installing-and-running-opinion-finder-for-sentiment-analysis</id><content type="html" xml:base="https://chrismaclellan.com/blog/installing-and-running-opinion-finder-for-sentiment-analysis"><![CDATA[<p>A walkthrough of how to install OpinionFinder 1.5.</p>
+
+<h1 id="overview">Overview</h1>
+
+<p>For my social media mining project on twitter sentiment aggregation I need a
+working version of University of Pittsburgh’s Opinion Finder 1.5.</p>
+
+<p>I went to the website here: <a href="http://www.cs.pitt.edu/mpqa/opinionfinder_1.html">http://www.cs.pitt.edu/mpqa/opinionfinder_1.html</a>
+and requested version 1.5.</p>
+
+<p>First unpackage the download and enter the directory:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>tar -zxvf opinionfinder.tar.gz
+cd opinionfinder
+</code></pre></div></div>
+
+<h1 id="installing-sundance">Installing Sundance</h1>
+
+<p>The first part of the install is installing sundance</p>
+
+<p>To do this you’ll need csh</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sudo aptitude install csh
+cd software/
+tar -zxvf sundance-4.37
+cd sundance-4.37/include
+</code></pre></div></div>
+
+<p>Open sunstr.C and uncomment the line</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>/* #include &lt;stdlib.h&gt; */
+</code></pre></div></div>
+
+<p>Open sunstr.h and edit the following include line:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>#include &lt;string&gt;
+</code></pre></div></div>
+
+<p>to be</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>#include &lt;string.h&gt;
+</code></pre></div></div>
+
+<p>Then go to <a href="http://www.cs.pitt.edu/mpqa/opinionfinder_1.html">this</a> site (at
+the bottom of the page) and download the hash.h file
+<a href="http://www.cs.pitt.edu/mpqa/hash.h">here</a>. Replace the current hash.h file (in
+the <sundance-4.37 dir="">/include) with the one you just downloaded.</sundance-4.37></p>
+
+<p>Lastly, compile the file:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cd ../scripts
+./install_script
+</code></pre></div></div>
+
+<p>That was what was necessary for me.</p>
+
+<h1 id="installing-scol1k">Installing scol1k</h1>
+
+<p>Next you need to install scol1k</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cd software/
+tar -zxvf scol1k.tgz
+cd scol1k.tgz
+cd tools
+</code></pre></div></div>
+
+<p>edit select.c and change line 84:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>target = *((int *)lines)++; 
+</code></pre></div></div>
+
+<p>to be</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>target = (*((int *)lines))++;
+</code></pre></div></div>
+
+<p>Then return to the home directory for scol1k and compile:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cd ..
+./configure
+make
+make install
+</code></pre></div></div>
+
+<p>I received some error at the end of running the make command (the make file ran
+reg on the e8.reg file and got a seg fault).</p>
+
+<p>I ignored this and ran make install anyways… because I think only the stemmer
+is being used by opinion finder.</p>
+
+<h1 id="installing-boostexter21">Installing Boostexter2.1</h1>
+
+<p>Next I moved on to installing BoosTexter 2.1 which I got here. I was able to
+get the i386 binary for boostexter2.1 and it ran without any problems</p>
+
+<h1 id="installing-wordnet-16">Installing Wordnet 1.6</h1>
+
+<p>Lastly, I had to get a copy of Wordnet 1.6
+<a href="http://wordnet.princeton.edu/wordnet/download/old-versions/">here</a>.</p>
+
+<p>It was pretty easy to install</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cd wordnet-1.6/
+</code></pre></div></div>
+
+<p>edit the make file for your distribution (uncomment the appropriate line):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>#platform=linux
+</code></pre></div></div>
+
+<p>becomes</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>platform=linux
+</code></pre></div></div>
+
+<p>Then I ran the make script to install the binaries:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sudo make BinWorld
+</code></pre></div></div>
+
+<h1 id="installing-sundance-apps">Installing Sundance Apps</h1>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cd software
+tar -zxvf sundance_apps-4.37
+cd sundance_apps-4.37
+</code></pre></div></div>
+
+<p>Then I edited the make file to include the proper path to the sundance directory.</p>
+
+<p>then I installed it:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>make autoannotate
+</code></pre></div></div>
+
+<h1 id="installing-opinion-finder">Installing Opinion Finder</h1>
+
+<p>Edit the config.txt file in the opinion finder directory to point to all of the
+software packages we just installed.</p>
+
+<p>Lastly, run the install script:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>python install.py config.txt
+</code></pre></div></div>
+
+<h1 id="running-opinion-finder">Running Opinion Finder</h1>
+<p>I followed the directions in the README</p>
+
+<p>I copied the files in the examples into the database/docs folder</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cp -R ./examples/marktwain ./database/docs
+</code></pre></div></div>
+
+<p>then I edited the twain.doclist file to have the appropriate path for each file</p>
+
+<p>then I ran opinionfinder command in the opinionfinder directory:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>python opinionfinder.py -f ./examples/twain.doclist
+</code></pre></div></div>
+
+<p>That’s it! Best of Luck</p>]]></content><author><name></name></author><summary type="html"><![CDATA[A walkthrough of how to install OpinionFinder 1.5.]]></summary></entry><entry><title type="html">Monetizing a Website with Bitcoins</title><link href="https://chrismaclellan.com/blog/monetizing-a-website-with-bitcoins" rel="alternate" type="text/html" title="Monetizing a Website with Bitcoins" /><published>2016-03-27T00:00:00+00:00</published><updated>2016-03-27T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/monetizing-a-website-with-bitcoins</id><content type="html" xml:base="https://chrismaclellan.com/blog/monetizing-a-website-with-bitcoins"><![CDATA[<p>This article is a continuation of my <a href="/blog/bitcoins-a-beginners-howto">last one</a> and focuses on the topic of <a href="http://www.bitcoin.org/">Bitcoins</a>. Instead of how to mine bitcoins on your computer I am going to discuss how you can use other people’s computers to do all the hard work using Javascript and PHP.</p>
+
+<h1 id="mining-for-bitcoins-with-javascript">Mining for Bitcoins with Javascript</h1>
+
+<p>A recent development in the bitcoin community is Javascript Bitcoin miners. These miners aren’t particularly fast but they allow you to utilize the users viewing your website to do your mining. The miners I was able to find (such as <a href="http://www.bitcoinplus.com/">Bitcoinplus</a>) all appeared to charge a fee (I think it was 19% for bitcoinplus). I didn’t want to pay a fee but I couldn’t find any working javascript miners available online. To solve this problem I found the project closest to working and made the changes to the code necessary to make it operational. You can get the working code at <a href="https://github.com/cmaclell/Bitcoin-JavaScript-Miner">github</a>.</p>
+
+<h1 id="mining-for-bitcoins-with-wordpress">Mining for Bitcoins with Wordpress</h1>
+
+<p>I then took this one step further. See numbers at the top of this post reading total hashes and hashes per second? I took my code and created a Wordpress plugin that easily integrates Bitcoin mining into your wordpress site. Simply activate the plugin and presto your readers are mining Bitcoins. Those numbers at the top of the page are the stats for your computer as you view this page. Now that I’ve made the plugin I’ll be releasing it on the wordpress plugin directory as soon as I can. You’ll be able to configure the plugin with whatever bitcoin server or pool you are using and be generating in no time.</p>
+
+<h1 id="converting-traffic-into-money">Converting traffic into money</h1>
+
+<p>The current exchange rate for Bitcoins is around $26 US per 1 BTC (bitcoin). I got this exchange rate at the biggest bitcoin exchanger <a href="https://mtgox.com/trade/sell">Mt. Gox</a>. Finding a hash results in a reward of 50 BTC or approx. $1300 US. Of course the chances of finding a hash are slim to none but the more traffic you have… the better your chances.</p>
+
+<h1 id="efficiency">Efficiency</h1>
+
+<p>Currently the best javascript miners were about 10-20 times faster then mine but now that I have everything up and running I can work on efficiency. If anyone would be interested in contributing please let me know.</p>
+
+<h1 id="conclusion">Conclusion</h1>
+
+<p>Mining for Bitcoins is an interesting and unique way to monetize your website which can possibly give you occasional big payouts. While the speed of hashing is lower with the javascript, large numbers of viewers may lead to a substantial number of hashes being tested. Keep and eye out for the plugin on wordpress.</p>
+
+<h1 id="future-work">Future Work</h1>
+
+<p>There may be interesting developments in this area with the release of GPU libraries for javascript enabling one to tap into the power of the video cards of their readers, though I don’t think the technology is ready quite yet. I’ve also had discussions with a few of my friends about creating an email signature which loads the javascript files from your website. This would result in bitcoins being generated when people view your emails. I’m not sure if it would work but it is certainly an interesting idea.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[This article is a continuation of my last one and focuses on the topic of Bitcoins. Instead of how to mine bitcoins on your computer I am going to discuss how you can use other people’s computers to do all the hard work using Javascript and PHP.]]></summary></entry><entry><title type="html">Reading a Thermistor</title><link href="https://chrismaclellan.com/blog/reading-a-thermistor" rel="alternate" type="text/html" title="Reading a Thermistor" /><published>2016-03-27T00:00:00+00:00</published><updated>2016-03-27T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/reading-a-thermistor</id><content type="html" xml:base="https://chrismaclellan.com/blog/reading-a-thermistor"><![CDATA[<p>An exploration of how to read a read a thermistor (a temperature monitor) by
+measuring the thermistor’s resistance using an analog input link on a USB Bit
+Wacker (UBW).</p>
+
+<h1 id="overview">Overview</h1>
+
+<p>I have been struggling over the past week to come up with a solution to read a
+10k NTC thermistor for my work. I eventually purchased a USB Bit Whacker (UBW)
+to perform my A/D conversion as well as satisfy my needs for gpio. Hardware in
+hand I had to figure out how to measure resistance with a analog input.</p>
+
+<p>A friend of mine recommended that I use an LM317L to regulate a constant
+current and just measure the voltage through the thermistor. While this is a
+good idea for small resistances to read a 10k thermistor I may be looking at as
+much as 15k ohm resistance for low temperatures. Therefore if the current
+cannot be regulated at a very small very precise amount then there will be a
+problem of producing voltage exceeding the 5V tolerance of the A/D card (I
+would need like &lt;.0003 A or something). I considered putting a resistor in
+parallel with the thermistor to limit the resistance and prevent voltage that
+will damage my A/D card. But when calculating the temperature from the
+resistance from the voltage any extra steps introduce measurement errors that
+begin to multiply and add up. This led to low accuracy resistance/temp
+readings.</p>
+
+<p>After exhausting this option I came across a very simple solution to this
+problem using a voltage divider. Since the UBW has a 5V VCC line I just used a
+simple voltage divider with the thermistor to create a voltage between 0-5V
+that is proportional to the resistance to the thermistor. Here is the
+schematics and the Temp Vs. Voltage graph:</p>
+
+<p><img src="/images/Thermistor-Reading-Circuit.jpg" alt="Diagram of thermistor circuit" title="Thermistor Circuit" /></p>
+
+<p><img src="/images/TempVsVoltage.png" alt="Curve showing relationship between temperature and
+voltage" title="Temperature vs. Voltage Curve" /></p>
+
+<p>This solution was significantly better. It was very simple to implement
+requiring only one resistor (I don’t even need a separate power source or
+current regulator). I could measure within 10ohms of the resistance that the
+meter measured. NOTE: This accuracy highly dependent on the accuracy of the
+measured voltage which sometimes was accurate and sometimes wasn’t do to the
+variance in the Vref from the USB. At home I measured it at 4.8V, at work 5.0V.
+If this isn’t set correctly in the software that converts the 12bit analog
+value into a voltage then the voltage measurement will be off, and so will the
+resistance/temp measurement.</p>
+
+<p>All in all I am very pleased with the UBW and am looking to add USART support
+and SPI to the firmware provided on the UBW Project Page. I’ll post my results
+here.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[An exploration of how to read a read a thermistor (a temperature monitor) by measuring the thermistor’s resistance using an analog input link on a USB Bit Wacker (UBW).]]></summary></entry><entry><title type="html">Sentiment Analysis of Tweets using Ruby</title><link href="https://chrismaclellan.com/blog/sentiment-analysis-of-tweets-using-ruby" rel="alternate" type="text/html" title="Sentiment Analysis of Tweets using Ruby" /><published>2016-03-27T00:00:00+00:00</published><updated>2016-03-27T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/sentiment-analysis-of-tweets-using-ruby</id><content type="html" xml:base="https://chrismaclellan.com/blog/sentiment-analysis-of-tweets-using-ruby"><![CDATA[<p>A description of a very simple twitter sentiment analyzer project. This system
+loads tweets on a user specified topic, scores the sentiment of each word in
+each tweet, computes an overall sentiment of each tweet, and then tallys the
+positive and negative sentiments for the topic.</p>
+
+<h1 id="overview">Overview</h1>
+
+<p>Twitter has become an international web phenomena where people report their
+everyday ideas and opinions. Along these lines sentiment analysis of tweets has
+been seeing a lot of attention lately. There have been articles in Wired
+Magazine and Bloomberg about using twitter to predict stock market trends. Work
+by economists at Technische Universitaet Muenchen (TUM, the Technical
+University of Munich) has even resulted in a website that gives free stock
+ticker predictions based on twitter. All of these articles really interested me
+and I think there will be more and more demand for the ability to mine social
+media data for opinions and sentiments. For these reasons I decided to see if I
+could make a basic twitter sentiment analyzer with the idea of making it more
+complex once I master the basics.</p>
+
+<p>For my project I decided to use Ruby to access Twitter’s Search API. It turns
+out it was extremely easy to use and did not even require any type of
+registration or authentication. For the sentiment analysis, I used a simple
+word list that I found online (turns out my project idea was also a class
+project at UMBC) mapping words to sentiment scores on the range of [-1, 1].</p>
+
+<p>The gist of my basic sentiment analysis algorithm was to gather all the tweets
+that matched the given search term (Twitter’s Search API pretty much took care
+of this) and for each tweet take the sum of the sentiment values of the words
+in the tweet (where the value is 0 if it doesn’t appear in my wordlist). If the
+sum was greater than some threshold (something like 0.00 or 0.40) then the
+tweet would be deemed to have positive sentiment. If the sum was less then the
+negative threshold (something like 0.00 or -0.40) then the tweet would be
+deemed to have a negative sentiment. Anything else would be deemed neutral.
+Then once all the tweets have been classified as positive, negative, or neutral
+you could use the ratio of positive to negative tweets to determine the general
+sentiment for the search term.</p>
+
+<p>As a rough estimate of sentiment this algorithm works great, mainly because it
+is so easy to implement. For serious sentiment analysis you would probably want
+something more complex. This algorithm would do horribly with sarcasm,
+multi-subject tweets, tweets not expressing explicit opinions (questions for
+example), etc. Now that I have a basic system to collect and analyze tweets I
+think I’ll be performing future work to better analyze the sentiment and
+opinions found in these tweets.</p>
+
+<p>Here is the Ruby code that I used for collecting tweets and performing this
+basic analysis in addition to the files with word sentiment:</p>
+
+<p><a href="https://github.com/cmaclell/Basic-Tweet-Sentiment-Analyzer">Twitter Sentiment Analysis Code
+(github)</a> (Mostly
+Ruby code)</p>]]></content><author><name></name></author><summary type="html"><![CDATA[A description of a very simple twitter sentiment analyzer project. This system loads tweets on a user specified topic, scores the sentiment of each word in each tweet, computes an overall sentiment of each tweet, and then tallys the positive and negative sentiments for the topic.]]></summary></entry><entry><title type="html">Teaching a Computer to Play TicTacToe</title><link href="https://chrismaclellan.com/blog/teaching-a-computer-to-play-tictactoe" rel="alternate" type="text/html" title="Teaching a Computer to Play TicTacToe" /><published>2016-03-27T00:00:00+00:00</published><updated>2016-03-27T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/teaching-a-computer-to-play-tictactoe</id><content type="html" xml:base="https://chrismaclellan.com/blog/teaching-a-computer-to-play-tictactoe"><![CDATA[<p>A simple linear regression based approach for teaching a computer to play
+Tic-Tac-Toe. The system learns to play better by repeatedly playing against
+itself and learning to recognize good and bad moves. This is a solution to one
+of the problems in Chapter 1 of <a href="http://www.amazon.com/gp/product/0071154671/ref=as_li_tf_tl?ie=UTF8&amp;tag=christopia-20&amp;linkCode=as2&amp;camp=217145&amp;creative=399349&amp;creativeASIN=0071154671">Machine Learning</a>.</p>
+
+<h1 id="approach">Approach</h1>
+
+<p>I just finished the first chapter of <a href="http://www.amazon.com/gp/product/0071154671/ref=as_li_tf_tl?ie=UTF8&amp;tag=christopia-20&amp;linkCode=as2&amp;camp=217145&amp;creative=399349&amp;creativeASIN=0071154671">Machine Learning (Mcgraw-Hill
+International Edit)</a>
+by Tom M. Mitchell. This chapter discusses the very basics of how to write a
+learning system and serves as an introduction to the rest of the book. As part
+of reading the chapter I decided to do exercise 1.5:</p>
+
+<blockquote>
+  <p>Implement an algorithm similar to that discussed for the checkers problem, but
+use the simpler game of tic-tac-toe. Represent the learned function Vestimate
+as a linear combination of board features of your choice. To train your program
+play it repeatedly against a second copy of the program that uses a fixed
+evaluation function you create by hand. Plot the percent of games won by your
+system, versus the number of training games played.</p>
+</blockquote>
+
+<p>I’ve taken numerous courses on artificial intelligence but I’ve only solved
+problems such as sudoku solvers and classification learners. While this is a
+simpler problem, it is a system that when done will be able to provide a
+challenge to my own wit. I started out very curious as to how well a simple
+linear function learning system will be able to learn how to play the game.</p>
+
+<p>To complete this problem I created a function that evaluate board states using
+a linear function which takes a hypothesis (7 weights) and features (6 of
+them) that are extracted from the board state. When playing the game the
+learner (the computer) gets all of the legal moves and applies the evaluation
+function to the new states to learn which move gets the highest rating from
+the evaluator, which it then acts on.</p>
+
+<p>The six features that I extracted from every board state were (a row is 3
+subsequent squares… the rows, columns, and diagonals):</p>
+<ul>
+  <li>x1 = # of instances where there are 2 x’s in a row with an open subsequent square.</li>
+  <li>x2 = # of instances where there are 2 o’s in a row with an open subsequent square.</li>
+  <li>x3 = # of instances where there is an x in a completely open row.</li>
+  <li>x4 = # of instances where there is an o in a completely open row.</li>
+  <li>x5 = # of instances of 3 x’s in a row (value of 1 signifies end game)</li>
+  <li>x6 = # of instances of 3 o’s in a row (value of 1 signifies end game)</li>
+</ul>
+
+<p>I would give a the learner some random weights/hypothesis to start (I set
+w0,w1,…,w6 all equal to .5). Then I played it against another learner (with
+the same starting weights). After the game is over I generate training data
+from the game to use to refine the weights for the next game.</p>
+<ul>
+  <li>Vtrain(boardstate) = 100 if end of game and you won.</li>
+  <li>Vtrain(boardstate) = -100 if end of game and you lost.</li>
+  <li>Vtrain(boardstate) = 0 if end of game and a draw.</li>
+  <li>Vtrain(boardstate) = Vestimate(successor(boardstate)) in not the end of the game</li>
+</ul>
+
+<p>Using this generated training data I update the weights using the least mean squares (LMS) method.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>for each pair &lt;boardstate, Vtrain(boardstate)&gt;:
+
+    use current weights to calculate Vestimate(boardstate).
+
+    for each weight wi, update it as
+       rwi = wi + learningConstant*(Vtrain(boardstate) - Vestimate(boardstate))*xi
+</code></pre></div></div>
+
+<p>(where learningConstant is a small constant like .1 or something that controls
+the rate at which the weights are updated) Once the weights are update the
+system is ready to player another game even smarter then the last!</p>
+
+<p>The end results of this project were alright. I trained the system against a
+player that randomly chooses moves each turn 10,000 games before I played it.
+The computer was capable of leading most games into a draw, and only lost if I
+was really tricky! That being said I think my project was a success. On the
+other hand I was capable of beating it, and it has been shown that if you play
+perfect games you never lose (see the TinkerToy computer that has never lost a
+game <a href="https://web.archive.org/web/20070824200126/http://www.rci.rutgers.edu:80/~cfs/472_html/Intro/TinkertoyComputer/TinkerToy.html">here</a>).</p>
+
+<p>With chapter 1 complete I am ready (and excited!) to start on chapter 2.</p>
+
+<p>I’ll keep you updated.</p>
+
+<p>p.s. here is my code if anyone is interested (it is probably really buggy as I
+whipped it up pretty quick). It is written in python:
+<a href="/code/TicTacToe.py">TicTacToe.py</a>.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[A simple linear regression based approach for teaching a computer to play Tic-Tac-Toe. The system learns to play better by repeatedly playing against itself and learning to recognize good and bad moves. This is a solution to one of the problems in Chapter 1 of Machine Learning.]]></summary></entry><entry><title type="html">The power of the subconscious? I think not.</title><link href="https://chrismaclellan.com/blog/the-power-of-the-subconscious-i-think-not" rel="alternate" type="text/html" title="The power of the subconscious? I think not." /><published>2016-03-27T00:00:00+00:00</published><updated>2016-03-27T00:00:00+00:00</updated><id>https://chrismaclellan.com/blog/the-power-of-the-subconscious-i-think-not</id><content type="html" xml:base="https://chrismaclellan.com/blog/the-power-of-the-subconscious-i-think-not"><![CDATA[<p>An argument against the theory that our brains continue to work on hard
+problems when we take breaks. Instead, I argue that we forget failed attempts,
+but maintain important metadata that facilitates a rapid solution on follow up
+attempts.</p>
+
+<h1 id="overview">Overview</h1>
+
+<p>Insight problems, or problems that are nearly impossible to solve without the
+crucial insight (with which they become trivial), are an interesting class of
+problems lead individuals to interesting conclusions about the subconscious
+mind. Namely, the experience of insight hints at our subconscious autonomously
+solving problems for us and magically making the solution aware to our
+conscious mind after the hard work has been done. I would argue that this
+conclusion is ill-founded and that it is quite unlikely that our subconscious
+performs autonomous problem solving. Instead the act of taking a break or
+resting leads our mind to go through a forgetting process where we eliminate
+false assumptions that prevented us from finding a solution. With these
+limiting false assumptions forgotten, the solution then becomes within reach of
+our conscious mind.</p>
+
+<p>Lately I have been studying insight and creativity in people and trying to
+figure out how such processes can be modeled with computers. Insight problems
+are tricky problems that have the distinctive characteristic that they are
+nearly unsolvable until one possesses the necessary insight to solve them, at
+which point the problems become trivial. As an example see the following
+figure. This figure composes the nine dots problem. The goal is to connect all
+the dots by drawing four lines without picking up your pen and never retracing
+your lines (solution available here). This problem is one of my favorite
+because it is nearly impossible to solve the problem without first seeing the
+solution but once you see the solution you will forever be able to solve the
+problem. The process one goes through to solve these problems happens to be
+very similar to that which people go through when solving real world problems.</p>
+
+<p><img src="/images/Ninedots.jpg" alt="Nine dots in a three by three grid" title="Ninedots" /></p>
+
+<p>Nine Dots Problem: connect all the dots by drawing four lines without lifting
+your pen or retracing a line.</p>
+
+<p>One of my favorite stories of real world insight is when Archimedes discovered
+the principle of displacement. It was said that he was tasked with determining
+if the king’s crown was in fact made of pure gold. To perform the necessary
+calculation he needed to know the volume of the crown (having known the density
+of gold and the weight of the crown) but since it was irregularly shaped he had
+no way of calculating it, short of melting it down (which he couldn’t do).
+After tirelessly attempting to solve the problem Archimedes finally gave up. To
+help relax after his hard work he decided to take a bath. Upon slipping into
+the water he observed that the water level rose due to the displacement of
+water by his body. Eureka! He immediately knew how to calculate the volume of
+the crown by submersing it in water and measuring the volume of water that had
+been displaced. This process of futile attempts to solve a problem followed by
+giving up and then having crucial insight leading to a solution is a pattern
+across all fields and disciplines.</p>
+
+<p>When originally approaching the problem I shared a similar prospective to that
+of the French mathematician Henri Poincaré. That when one works hard enough on
+a problem the chunks of information become available to the subconscious mind,
+enabling it to work on your behalf while sleeping and performing other
+activities. When the subconscious mind solves the problem it makes it aware to
+your conscious mind and you experience a flash of insight and immediately know
+the solution. This hypothesis often called the autonomous-process hypothesis is
+a very popular theory among many scientists who have experienced this (myself
+included). After throughly researching the subject I am convinced that this
+hypothesis is ill-founded.</p>
+
+<p>Instead what I believe takes place is more of a selective forgetting process.
+When we originally face problems we make assumptions about the problem that
+limit the search space to one that can be tractably explored. In insight
+problems these assumptions lead to the construction of a problem space that
+lacks a valid solution. When we take a break from the problem solving we begin
+to forget the original assumptions that we made about the problem. This enables
+us to make new assumptions the next time we see the problem (most likely new
+assumptions because we know the old ones didn’t work). These new assumptions
+may lead to a search space which does in fact contain a solution, making the
+solution trivial.</p>
+
+<p>This explanation for insight while less magical is more likely to be correct as
+it is supported by the literature that I have read. It would appear that all
+problem solving is a conscious mindful task and the subconscious mind isn’t
+some mystical calculator which is more powerful then our conscious mind. It
+makes me think that movies like “Limitless” which purport making someone super
+intelligent by tapping into their unused brain power is in fact preposterous no
+matter how good of a movie it makes.</p>
+
+<p>This does hint at some interesting future work for artificial intelligence. How
+does the human mind make search space limiting assumptions? These assumptions
+make problem solving tractable for humans and could probably do so for
+computers. Additionally how does one know which assumptions to forget and which
+to keep? These are problems I am currently exploring.</p>]]></content><author><name></name></author><summary type="html"><![CDATA[An argument against the theory that our brains continue to work on hard problems when we take breaks. Instead, I argue that we forget failed attempts, but maintain important metadata that facilitates a rapid solution on follow up attempts.]]></summary></entry></feed>
